@@ -13,11 +13,7 @@ import { getNotificationsPreference, handleNotificationToggle } from '../../lib/
 interface DashboardScreenProps {
   navigation: any;
 }
-import { useAuth, useUser } from '@clerk/clerk-expo';
-
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
-  const { signOut } = useAuth();
-  const { user } = useUser();
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [crisisOpen, setCrisisOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -341,13 +337,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           </TouchableOpacity>
         </View>
 
-        {/* Logout Button */}
         <TouchableOpacity 
           style={styles.logoutBtn}
-          onPress={() => {
-            signOut().then(() => {
-              navigation.replace('Landing');
-            });
+          onPress={async () => {
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+            await AsyncStorage.removeItem('jwt_token');
+            navigation.replace('Landing');
           }}
         >
           <LogOut size={20} color={Theme.colors.error} />

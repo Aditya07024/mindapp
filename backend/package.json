@@ -20,6 +20,7 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^20.14.10",
     "@types/nodemailer": "^8.0.0",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -39,5 +40,8 @@
     "typescript": "^5.5.4",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6"
   }
 }

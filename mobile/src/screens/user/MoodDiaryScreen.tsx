@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useUser } from '@clerk/clerk-expo';
 import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Sparkles, Calendar, Plus } from 'lucide-react-native';
 import API from '../../lib/api';
@@ -16,7 +15,6 @@ interface MoodDiaryScreenProps {
 }
 
 function moodColor(score: number) {
-  // 1-3 = coral-red, 4-5 = amber, 6-7 = lime, 8-10 = teal-green
   if (score <= 3) return '#DE4E37';
   if (score <= 5) return '#E5963E';
   if (score <= 7) return '#7FB355';
@@ -25,14 +23,13 @@ function moodColor(score: number) {
 
 export const MoodDiaryScreen: React.FC<MoodDiaryScreenProps> = ({ navigation }) => {
   const queryClient = useQueryClient();
-  const { user } = useUser();
   const { data: profileData } = useQuery({
     queryKey: ['userProfile'],
     queryFn: () => API.user.profile(),
     retry: false,
   });
   const storeFirstName = useStore(state => state.firstName);
-  const firstName = profileData?.user?.fullName?.split(" ")[0] || user?.firstName || storeFirstName || 'Friend';
+  const firstName = profileData?.user?.fullName?.split(" ")[0] || storeFirstName || 'Friend';
   const [crisisOpen, setCrisisOpen] = useState(false);
 
   // Fetch mood logs

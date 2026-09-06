@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, LogBox, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ClerkProvider, SignedIn, SignedOut, useAuth } from '@clerk/clerk-expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -86,37 +85,24 @@ const queryClient = new QueryClient();
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_ZmFtb3VzLWNhaW1hbi02NC5jbGVyay5hY2NvdW50cy5kZXYk';
 
 function AuthBridge({ children }: { children: React.ReactNode }) {
-  const { getToken, isSignedIn } = useAuth();
-
-  // Inject active Clerk token getter into our API layer synchronously during render
-  setTokenGetter(async () => {
-    try {
-      return await getToken();
-    } catch (err) {
-      return null;
-    }
-  });
-
-  // Register push notifications when user signs in
+  // Register push notifications when user is authenticated with JWT
   useEffect(() => {
-    if (!isSignedIn) return;
-
     let cleanupListeners: (() => void) | undefined;
 
     const initPush = async () => {
+      const jwtToken = await AsyncStorage.getItem('jwt_token');
+      if (!jwtToken) return;
+
       const token = await registerForPushNotificationsAsync();
       if (token) {
         await sendTokenToBackend(token);
       }
 
-      // Set up foreground + tap listeners
       cleanupListeners = setupNotificationListeners(
         (notification) => {
-          // Foreground notification received — could update badge count, etc.
           console.log('[App] Push received:', notification.request.content.title);
         },
         (response) => {
-          // User tapped notification — could navigate to relevant screen
           console.log('[App] Push tapped:', response.notification.request.content.data);
         }
       );
@@ -127,7 +113,7 @@ function AuthBridge({ children }: { children: React.ReactNode }) {
     return () => {
       cleanupListeners?.();
     };
-  }, [isSignedIn]);
+  }, []);
 
   return <>{children}</>;
 }
@@ -256,18 +242,16 @@ export default function App() {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-      <QueryClientProvider client={queryClient}>
-        <AuthBridge>
-          <NavigationContainer linking={linking}>
-            <View style={styles.container}>
-              <RootNavigator />
-              <StatusBar style="dark" />
-            </View>
-          </NavigationContainer>
-        </AuthBridge>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthBridge>
+        <NavigationContainer linking={linking}>
+          <View style={styles.container}>
+            <RootNavigator />
+            <StatusBar style="dark" />
+          </View>
+        </NavigationContainer>
+      </AuthBridge>
+    </QueryClientProvider>
   );
 }
 

@@ -19,7 +19,7 @@ async function run() {
       const isEmail = user.phoneMasked?.includes("@");
       const userEmail = isEmail ? user.phoneMasked : undefined;
       const phoneRegex = /^\+?[1-9]\d{9,14}$/;
-      const userPhone = (!isEmail && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
+      const userPhone = (!isEmail && user.phoneMasked && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
 
       const callbackUrl = `${process.env.API_URL}/api/payment/report/dummy/callback`;
 

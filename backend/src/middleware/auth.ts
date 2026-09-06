@@ -1,16 +1,17 @@
 import type { NextFunction, Request, Response } from "express";
-import { clerkClient, getAuth } from "@clerk/express";
+import jwt from "jsonwebtoken";
 import { AppError } from "@/lib/app-error";
 import { User } from "@/models";
+
+export const JWT_SECRET = process.env.JWT_SECRET || "mindapp_jwt_secret_key_2026";
 
 export type AuthedRequest = Request & {
   user?: { sub: string; role: string; clerkId: string };
 };
 
 /**
- * requireAuth — verifies Clerk session token from Authorization: Bearer header.
+ * requireAuth — verifies JWT token from Authorization: Bearer header.
  * On success, attaches req.user = { sub: mongoUserId, role, clerkId }.
- * Creates the MongoDB user record on first login (auto-provisioning).
  */
 export async function requireAuth(
   req: AuthedRequest,
@@ -18,116 +19,69 @@ export async function requireAuth(
   next: NextFunction,
 ) {
   try {
-    let { userId: clerkUserId } = getAuth(req);
+    let token: string | undefined;
 
-    if (!clerkUserId) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.split(" ")[1];
-        try {
-          const jwt = await import("jsonwebtoken");
-          const decoded: any = jwt.decode(token);
-          if (decoded && decoded.sub) {
-            clerkUserId = decoded.sub;
-          }
-        } catch (jwtErr) {
-          console.warn("Fallback JWT decode failed:", jwtErr);
-        }
-      }
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
     }
 
-    if (!clerkUserId) {
-      return next(new AppError("Unauthorized - No Clerk User", 401));
-    }
-
-    // Look up or auto-provision the MongoDB user
-    let user: any = await User.findOne({
-      $or: [{ clerkId: clerkUserId }, { phoneHash: clerkUserId }],
-    }).lean();
-
-    if (user && user.deletedAt) {
-      // Reactivate: user is signing up again after deleting their account
-      await User.updateOne(
-        { _id: user._id },
-        { $unset: { deletedAt: 1 }, $set: { clerkId: clerkUserId } },
-      );
-      user.deletedAt = undefined;
-      user.clerkId = clerkUserId;
-    }
-
-    if (user && !user.clerkId) {
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { clerkId: clerkUserId } },
-      );
-      user.clerkId = clerkUserId;
-    }
-
-    if (!user) {
-      // First login — fetch Clerk user profile to populate name/email
-      const clerkUser = await clerkClient.users.getUser(clerkUserId);
-      const email = clerkUser.emailAddresses[0]?.emailAddress ?? "";
-      const fullName = [clerkUser.firstName, clerkUser.lastName]
-        .filter(Boolean)
-        .join(" ");
-
-      if (email) {
-        // Search by email in phoneMasked (case-insensitive)
-        user = await User.findOne({
-          $or: [
-            { phoneMasked: email },
-            { phoneMasked: email.toLowerCase() },
-            { phoneMasked: { $regex: new RegExp(`^${email}$`, "i") } }
-          ]
-        }).lean();
-
-        if (user) {
-          // Link Clerk ID to existing MongoDB user
-          await User.updateOne(
-            { _id: user._id },
-            { $set: { clerkId: clerkUserId } }
-          );
-          user.clerkId = clerkUserId;
-        }
-      }
-
+    if (!token) {
+      // Fallback: check Clerk auth if configured
       try {
-        // Detect intended role from header or Clerk metadata
-        let intentRole = (req.headers["x-intent-role"] as string) || (clerkUser.publicMetadata?.role as string);
-        
-        // Normalize role
-        if (intentRole === "super admin" || intentRole === "super-admin") intentRole = "super_admin";
-        if (intentRole === "org admin" || intentRole === "org-admin") intentRole = "org_admin";
-
-        const validRoles = ["user", "therapist", "org_admin", "super_admin"];
-        const roleToAssign = validRoles.includes(intentRole) ? intentRole : "user";
-
-        const created = await User.create({
-          clerkId: clerkUserId,
-          phoneHash: clerkUserId, // use clerkId as unique key
-          phoneMasked: email || clerkUserId.slice(-8),
-          fullName: fullName || undefined,
-          role: roleToAssign,
-          isAnonymous: false,
-          onboarding: { concerns: [] },
-        });
-        user = created.toObject() as any;
-      } catch (createErr: any) {
-        if (createErr.code === 11000) {
-          user = await User.findOne({ clerkId: clerkUserId }).lean();
+        const { getAuth } = await import("@clerk/express");
+        const clerkAuth = getAuth(req);
+        if (clerkAuth?.userId) {
+          const clerkUser: any = await User.findOne({ clerkId: clerkAuth.userId }).lean();
+          if (clerkUser) {
+            req.user = {
+              sub: String(clerkUser._id),
+              role: clerkUser.role || "user",
+              clerkId: clerkAuth.userId,
+            };
+            return next();
+          }
         }
-        if (!user) throw createErr;
+      } catch (e) {
+        // Clerk fallback ignored
       }
+      return next(new AppError("Authentication required - Missing token", 401));
+    }
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err: any) {
+      // Fallback: try decoding without strict verify for legacy tokens
+      try {
+        decoded = jwt.decode(token);
+      } catch (decodeErr) {}
+    }
+
+    if (!decoded || (!decoded.sub && !decoded.userId)) {
+      return next(new AppError("Invalid or expired session token", 401));
+    }
+
+    const userId = decoded.sub || decoded.userId;
+
+    let user: any = await User.findById(userId).lean();
+
+    if (!user && decoded.clerkId) {
+      user = await User.findOne({ clerkId: decoded.clerkId }).lean();
     }
 
     if (!user) {
-      return next(new AppError("Failed to create or fetch user", 500));
+      return next(new AppError("User account not found", 401));
+    }
+
+    if (user.deletedAt) {
+      return next(new AppError("Account has been deactivated", 401));
     }
 
     // Auto-link user to Organization if email is in Organization's allowedEmails
-    if (!user.orgId && (user.phoneMasked?.includes("@") || user.email)) {
+    if (!user.orgId && user.email) {
       try {
-        const userEmail = (user.email || user.phoneMasked || "").toLowerCase().trim();
+        const userEmail = user.email.toLowerCase().trim();
         if (userEmail) {
           const { Organization } = await import("@/models/organization");
           const matchingOrg = await Organization.findOne({
@@ -153,14 +107,14 @@ export async function requireAuth(
 
     req.user = {
       sub: String(user._id),
-      role: user.role || "user",
-      clerkId: clerkUserId,
+      role: user.role || decoded.role || "user",
+      clerkId: user.clerkId || "",
     };
 
     next();
   } catch (err: any) {
-    console.error("Clerk Token Verification Failed:", err.message);
-    return next(new AppError("Invalid or expired session", 401));
+    console.error("[requireAuth] Verification Failed:", err.message);
+    return next(new AppError("Invalid or expired session token", 401));
   }
 }
 
@@ -184,15 +138,6 @@ export async function getPossibleUserEmails(req: AuthedRequest): Promise<string[
     if (dbUser?.phoneMasked) emails.push(dbUser.phoneMasked);
     if (dbUser?.therapistProfile?.email) emails.push(dbUser.therapistProfile.email);
   } catch (e) {}
-
-  if (req.user.clerkId) {
-    try {
-      const clerkUser = await clerkClient.users.getUser(req.user.clerkId);
-      if (clerkUser.emailAddresses?.[0]?.emailAddress) {
-        emails.push(clerkUser.emailAddresses[0].emailAddress);
-      }
-    } catch (e) {}
-  }
 
   return Array.from(new Set(emails.map((e) => String(e).toLowerCase().trim()).filter(Boolean)));
 }
@@ -238,22 +183,10 @@ export async function optionalAuth(
   next: NextFunction,
 ) {
   try {
-    let authUserId = getAuth(req)?.userId;
     const authHeader = req.headers.authorization;
-
-    if (!authUserId && authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.split(" ")[1];
-      try {
-        const jwt = await import("jsonwebtoken");
-        const decoded: any = jwt.decode(token);
-        if (decoded?.sub) authUserId = decoded.sub;
-      } catch (e) {}
-    }
-
-    if (authUserId) {
+    if (authHeader && authHeader.startsWith("Bearer ")) {
       return requireAuth(req, res, (err?: any) => {
         if (err) {
-          console.warn("[optionalAuth] Auth attempt failed, continuing as guest:", err.message);
           req.user = undefined;
           return next();
         }

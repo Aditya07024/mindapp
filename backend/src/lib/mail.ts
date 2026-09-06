@@ -108,3 +108,43 @@ export async function sendInviteEmail(email: string, orgName: string, originUrl?
     return false;
   }
 }
+
+export async function sendPasswordResetEmail(email: string, newPassword: string) {
+  const transporter = await createTransporter();
+  if (!transporter) {
+    console.warn("Mail transporter not configured. Cannot send password reset to:", email);
+    return false;
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || process.env.SMTP_USER || "noreply@mymindtherapyfriend.com",
+    to: email,
+    subject: "Your New Password - MyMindTherapyFriend",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #faf9f6;">
+        <h2 style="color: #2e6e65; text-align: center; margin-bottom: 20px;">MyMindTherapyFriend</h2>
+        <p style="color: #334155; font-size: 15px;">Hello,</p>
+        <p style="color: #334155; font-size: 15px;">We received a request to reset your password. Here is your temporary new password:</p>
+        <div style="text-align: center; margin: 24px 0;">
+          <span style="font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #2e6e65; background: #e6f2f0; padding: 12px 24px; border-radius: 8px; display: inline-block;">
+            ${newPassword}
+          </span>
+        </div>
+        <p style="color: #334155; font-size: 14px;">Please sign in to the app using this new password.</p>
+        <p style="color: #64748b; font-size: 12px; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+          If you did not request a password reset, please contact support immediately.
+        </p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`Password reset email successfully sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`Error sending password reset email to ${email}:`, error);
+    return false;
+  }
+}
+

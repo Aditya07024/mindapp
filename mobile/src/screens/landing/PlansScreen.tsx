@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text, ScrollView, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@clerk/clerk-expo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import { CheckCircle } from 'lucide-react-native';
 import API from '../../lib/api';
@@ -13,8 +13,12 @@ interface PlansScreenProps {
 }
 
 export const PlansScreen: React.FC<PlansScreenProps> = ({ navigation }) => {
-  const { isSignedIn } = useAuth();
+  const [isSignedIn, setIsSignedIn] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    AsyncStorage.getItem('jwt_token').then(token => setIsSignedIn(!!token));
+  }, []);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [cancellingPending, setCancellingPending] = useState(false);
   const [plans, setPlans] = useState<PlanData[]>([

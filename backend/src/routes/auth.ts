@@ -4,9 +4,12 @@ import { requireAuth } from "@/middleware/auth";
 
 const router = Router();
 
-// OTP routes removed — auth is now handled by Clerk (Google, Apple, email)
-// Clerk auto-provisions MongoDB users on first sign-in via requireAuth middleware
+// Public Authentication Endpoints (JWT)
+router.post("/register", AuthController.register);
+router.post("/login", AuthController.login);
+router.post("/forgot-password", AuthController.forgotPassword);
 
+// Protected User Routes (Require JWT Token)
 router.get("/me", requireAuth, AuthController.me);
 router.patch("/onboarding", requireAuth, AuthController.updateOnboarding);
 router.post("/therapist/onboarding", requireAuth, AuthController.therapistOnboarding);

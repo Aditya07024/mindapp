@@ -142,7 +142,7 @@ export class PaymentController {
       const isEmail = user.phoneMasked?.includes("@");
       const userEmail = isEmail ? user.phoneMasked : undefined;
       const phoneRegex = /^\+?[1-9]\d{9,14}$/;
-      const userPhone = (!isEmail && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
+      const userPhone = (!isEmail && user.phoneMasked && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
 
       // Create Razorpay Payment Link (hosted page — works in mobile in-app browsers)
       const callbackUrl = getCallbackUrl(req, `/api/payment/${bookingId}/callback`);
@@ -701,7 +701,7 @@ export class PaymentController {
       const isEmail = user.phoneMasked?.includes("@");
       const userEmail = isEmail ? user.phoneMasked : undefined;
       const phoneRegex = /^\+?[1-9]\d{9,14}$/;
-      const userPhone = (!isEmail && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
+      const userPhone = (!isEmail && user.phoneMasked && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
 
       const callbackUrl = getCallbackUrl(req, `/api/payment/report/${report._id}/callback`);
       
@@ -919,7 +919,7 @@ export class PaymentController {
       const isEmail = user.phoneMasked?.includes("@");
       const userEmail = isEmail ? user.phoneMasked : undefined;
       const phoneRegex = /^\+?[1-9]\d{9,14}$/;
-      const userPhone = (!isEmail && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
+      const userPhone = (!isEmail && user.phoneMasked && phoneRegex.test(user.phoneMasked)) ? user.phoneMasked : undefined;
 
       const callbackUrl = getCallbackUrl(req, `/api/payment/wallet/callback/${tx._id}`);
 

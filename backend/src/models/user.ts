@@ -12,9 +12,12 @@ export interface IOnboardingState {
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
-  clerkId?: string;          // Clerk user ID (set on first OAuth login)
-  phoneHash: string;
-  phoneMasked: string;
+  clerkId?: string;          // Clerk user ID (legacy)
+  username?: string;         // Unique username
+  email?: string;            // User email address
+  passwordHash?: string;     // Hashed password for JWT auth
+  phoneHash?: string;
+  phoneMasked?: string;
   fullName?: string;
   role: UserRole;
   tier: UserTier;
@@ -87,8 +90,11 @@ const OnboardingSchema = new Schema<IOnboardingState>(
 const UserSchema = new Schema<IUser>(
   {
     clerkId: { type: String, unique: true, sparse: true, index: true },
+    username: { type: String, unique: true, sparse: true, index: true, lowercase: true, trim: true },
+    email: { type: String, unique: true, sparse: true, index: true, lowercase: true, trim: true },
+    passwordHash: { type: String, select: false },
     phoneHash: { type: String, required: false, unique: true, sparse: true, index: true },
-    phoneMasked: { type: String, required: true },
+    phoneMasked: { type: String, required: false },
     fullName: { type: String },
 
     role: {

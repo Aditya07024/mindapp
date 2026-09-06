@@ -1,12 +1,17 @@
 import type { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { asyncHandler } from "@/lib/async-handler";
 import { AuthService } from "@/services/auth.service";
-import type { AuthedRequest } from "@/middleware/auth";
+import { JWT_SECRET, type AuthedRequest } from "@/middleware/auth";
 import { User } from "@/models";
+import { sendPasswordResetEmail } from "@/lib/mail";
 
 function serializeUser(user: any) {
   return {
     id: user._id,
+    username: user.username,
+    email: user.email || user.phoneMasked,
     role: user.role,
     tier: user.tier,
     language: user.language,
@@ -21,7 +26,152 @@ function serializeUser(user: any) {
 }
 
 export class AuthController {
-  /** GET /auth/me — returns the current Clerk-authed user's MongoDB profile */
+  /** POST /auth/register — Account creation with username, email, password, repassword */
+  static register = asyncHandler(async (req: Request, res: Response) => {
+    const { username, email, password, repassword, role } = req.body;
+
+    if (!username || !username.trim()) {
+      return res.status(400).json({ error: "Username is required" });
+    }
+    if (!email || !email.trim() || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email address is required" });
+    }
+    if (!password || !password.trim()) {
+      return res.status(400).json({ error: "Password is required" });
+    }
+    if (password !== repassword) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+
+    const cleanUsername = username.toLowerCase().trim();
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check if email already exists
+    const existingEmail = await User.findOne({
+      $or: [{ email: cleanEmail }, { phoneMasked: cleanEmail }]
+    });
+    if (existingEmail) {
+      return res.status(400).json({ error: "An account with this email already exists" });
+    }
+
+    // Check if username already exists
+    const existingUsername = await User.findOne({ username: cleanUsername });
+    if (existingUsername) {
+      return res.status(400).json({ error: "Username is already taken" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const validRoles = ["user", "therapist", "org_admin", "super_admin"];
+    const userRole = validRoles.includes(role) ? role : "user";
+
+    const user = await User.create({
+      username: cleanUsername,
+      email: cleanEmail,
+      phoneMasked: cleanEmail,
+      fullName: username.trim(),
+      passwordHash,
+      role: userRole,
+      isAnonymous: false,
+      onboarding: { concerns: [] },
+    });
+
+    const token = jwt.sign(
+      { sub: user._id.toString(), role: user.role },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    res.status(201).json({
+      token,
+      user: serializeUser(user),
+    });
+  });
+
+  /** POST /auth/login — Sign in with email/username and password */
+  static login = asyncHandler(async (req: Request, res: Response) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
+    const cleanIdentifier = email.toLowerCase().trim();
+
+    const user: any = await User.findOne({
+      $or: [
+        { email: cleanIdentifier },
+        { username: cleanIdentifier },
+        { phoneMasked: cleanIdentifier }
+      ]
+    }).select("+passwordHash");
+
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ error: "Invalid email/username or password" });
+    }
+
+    if (user.deletedAt) {
+      return res.status(401).json({ error: "Account has been deactivated" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid email/username or password" });
+    }
+
+    const token = jwt.sign(
+      { sub: user._id.toString(), role: user.role },
+      JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    res.json({
+      token,
+      user: serializeUser(user),
+    });
+  });
+
+  /** POST /auth/forgot-password — Send new password via email */
+  static forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+    const { email } = req.body;
+
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email address is required" });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    const user: any = await User.findOne({
+      $or: [{ email: cleanEmail }, { phoneMasked: cleanEmail }]
+    });
+
+    if (!user) {
+      // Don't reveal account non-existence for security, but return friendly response
+      return res.json({
+        success: true,
+        message: "If an account with that email exists, a new password has been sent to your email address."
+      });
+    }
+
+    // Generate random 8-character password
+    const newPassword = "Mind@" + Math.random().toString(36).substring(2, 8);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    user.passwordHash = passwordHash;
+    await user.save();
+
+    // Send email with new password
+    const emailSent = await sendPasswordResetEmail(cleanEmail, newPassword);
+
+    res.json({
+      success: true,
+      message: emailSent
+        ? `A new password has been sent to ${cleanEmail}. Please check your inbox and log in.`
+        : `Your password has been reset to: ${newPassword} (Note: SMTP not configured, password displayed here for testing)`
+    });
+  });
+
+  /** GET /auth/me — returns current JWT-authed user's MongoDB profile */
   static me = asyncHandler(async (req: AuthedRequest, res: Response) => {
     const user = await User.findById(req.user!.sub).lean();
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -75,10 +225,9 @@ export class AuthController {
       if (orgId) user.orgId = orgId;
       if (location) user.location = location;
 
-      // Ensure they have the therapist role now, but verification is pending
       user.role = "therapist";
 
-      let sessionFee = 899; // Default
+      let sessionFee = 899;
       if (experienceCategory === "5 to 10 yr") sessionFee = 1299;
       else if (experienceCategory === "10 to 15 yr") sessionFee = 1599;
       else if (experienceCategory === "more than 15 yr") sessionFee = 2199;
@@ -114,11 +263,11 @@ export class AuthController {
       res.json(serializeUser(user));
     }
   );
+
   static setRole = asyncHandler(
     async (req: AuthedRequest, res: Response) => {
       let { role } = req.body;
 
-      // Normalize frontend role values
       if (role === "super admin") role = "super_admin";
       if (role === "super-admin") role = "super_admin";
       if (role === "org admin") role = "org_admin";
@@ -135,8 +284,6 @@ export class AuthController {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // SECURITY FIX: If the user already has a defined role (other than 'user'), DO NOT allow it to be changed.
-      // This prevents an Org Admin from accidentally becoming a regular user or vice versa if they click the wrong link.
       if (userDoc.role !== "user" && userDoc.role !== role) {
         return res.json({
           message: "Role is already locked for this account.",
@@ -154,7 +301,6 @@ export class AuthController {
     },
   );
 
-  /** POST /auth/push-token — register an Expo push token for this user */
   static registerPushToken = asyncHandler(
     async (req: AuthedRequest, res: Response) => {
       const { token } = req.body;
@@ -163,7 +309,6 @@ export class AuthController {
         return res.status(400).json({ error: "Invalid Expo push token" });
       }
 
-      // $addToSet prevents duplicate tokens
       await User.findByIdAndUpdate(req.user!.sub, {
         $addToSet: { expoPushTokens: token },
       });
@@ -181,15 +326,6 @@ export class AuthController {
 
       user.deletedAt = new Date();
       await user.save();
-
-      if (user.clerkId) {
-        try {
-          const { clerkClient } = await import("@clerk/express");
-          await clerkClient.users.deleteUser(user.clerkId);
-        } catch (err: any) {
-          console.error(`[Auth] Failed to delete user ${userId} from Clerk:`, err.message);
-        }
-      }
 
       res.json({ success: true, message: "Profile deleted successfully" });
     }

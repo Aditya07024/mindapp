@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Image, Modal, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeartHandshake, LogOut, X, Bell, Sparkles, Wallet, FileText } from 'lucide-react-native';
-import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useNavigation } from '@react-navigation/native';
 import { Theme } from '../theme';
 
@@ -58,9 +57,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.removeItem('jwt_token');
     } catch (err) {
-      console.log("Clerk signOut note (already signed out or dev reload):", err);
+      console.log("SignOut storage error:", err);
     } finally {
       setModalVisible(false);
       if (navigation) {
@@ -72,9 +72,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     }
   };
 
-  const finalAvatarUrl = userImageUrl || user?.imageUrl;
-  const emailAddress = user?.primaryEmailAddress?.emailAddress || 'MyMindTherapyFriend Member';
-  const displayName = user?.fullName || userFirstName;
+  const finalAvatarUrl = userImageUrl;
+  const emailAddress = 'MyMindTherapyFriend Member';
+  const displayName = userFirstName;
 
   return (
     <View style={[styles.headerContainer, { paddingTop: insets.top + 8 }]}>

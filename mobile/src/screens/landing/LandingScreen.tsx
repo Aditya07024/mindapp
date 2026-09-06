@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Dimensions, Image, Linking, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, ArrowRight } from 'lucide-react-native';
-import { useAuth } from '@clerk/clerk-expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '../../theme';
@@ -15,159 +14,62 @@ interface LandingScreenProps {
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({ navigation }) => {
   const { width } = Dimensions.get('window');
-  const { isSignedIn, isLoaded } = useAuth();
   const insets = useSafeAreaInsets();
-
-  // Track whether auth check is complete to prevent landing page flash
   const [hasChecked, setHasChecked] = useState(false);
   const redirectingRef = useRef(false);
 
-  // Safety timeout: if Clerk takes too long, show landing UI anyway
   React.useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (!hasChecked) {
-        console.log('[Landing] Safety timeout reached — showing landing UI');
-        setHasChecked(true);
-      }
-    }, 3000);
-    return () => clearTimeout(timeout);
-  }, [hasChecked]);
-
-  // Handle auto-redirection based on confirmed user profile role from MongoDB
-  React.useEffect(() => {
-    if (!isLoaded) return; // Wait for Clerk to hydrate
-
-    // If user is NOT signed in, immediately show landing UI
-    if (!isSignedIn) {
-      setHasChecked(true);
-      return;
-    }
-
-    // User IS signed in — redirect to their dashboard without showing landing UI
     const checkRedirect = async () => {
       if (redirectingRef.current) return;
       redirectingRef.current = true;
 
-      let stashedIntendedRole: string | null = null;
       try {
-        // 1. Retrieve any intended signup role saved from OAuth selection stage
-        const intendedRole = await AsyncStorage.getItem('intended_role');
-        stashedIntendedRole = intendedRole;
-        const savedUpgradePlan = await AsyncStorage.getItem('upgrade_plan');
-
-        if (intendedRole) {
-          try {
-            // Commit intended role to backend database
-            const res = await API.auth.setRole(intendedRole);
-            const confirmedRole = res.user?.role || intendedRole;
-
-            // Clear stored credentials
-            await AsyncStorage.removeItem('intended_role');
-            if (savedUpgradePlan) {
-              await AsyncStorage.removeItem('upgrade_plan');
-            }
-
-            // Navigate to respective portal
-            if (confirmedRole === 'user') {
-              const profile = await API.auth.me();
-              if (profile && profile.onboarding && profile.onboarding.completedAt) {
-                navigation.replace('UserTabs', { screen: 'Home', upgradePlan: savedUpgradePlan });
-              } else {
-                navigation.replace('Onboarding', { upgradePlan: savedUpgradePlan });
-              }
-            } else if (confirmedRole === 'therapist') {
-              navigation.replace('TherapistTabs');
-            } else if (confirmedRole === 'org_admin') {
-              navigation.replace('OrgTabs');
-            } else if (confirmedRole === 'super_admin') {
-              navigation.replace('AdminTabs');
-            }
-            return;
-          } catch (err) {
-            console.error("Failed to commit role to backend in autologin:", err);
-            // Fallback redirect respecting the intended role so they are not sent to seeker dashboard!
-            await AsyncStorage.removeItem('intended_role');
-            if (savedUpgradePlan) {
-              await AsyncStorage.removeItem('upgrade_plan');
-            }
-            if (intendedRole === 'user') {
-              navigation.replace('UserTabs', { screen: 'Home', upgradePlan: savedUpgradePlan });
-            } else if (intendedRole === 'therapist') {
-              navigation.replace('TherapistTabs');
-            } else if (intendedRole === 'org_admin') {
-              navigation.replace('OrgTabs');
-            } else if (intendedRole === 'super_admin') {
-              navigation.replace('AdminTabs');
-            }
-            return;
-          }
+        const token = await AsyncStorage.getItem('jwt_token');
+        if (!token) {
+          setHasChecked(true);
+          return;
         }
 
-        // 2. Default fallback check if no custom signup role was saved (subsequent opens)
         const profile = await API.auth.me();
         const role = profile?.role || 'user';
 
-if (role === 'user') {
-  if (profile?.onboarding?.completedAt) {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'UserTabs', params: { screen: 'Home' } }],
-    });
-  } else {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Onboarding' }],
-    });
-  }
-} else if (role === 'therapist') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'TherapistTabs' }],
-  });
-} else if (role === 'org_admin') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'OrgTabs' }],
-  });
-} else if (role === 'super_admin') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'AdminTabs' }],
-  });
-}
+        if (role === 'user') {
+          if (profile?.onboarding?.completedAt) {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'UserTabs', params: { screen: 'Home' } }],
+            });
+          } else {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Onboarding' }],
+            });
+          }
+        } else if (role === 'therapist') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'TherapistTabs' }],
+          });
+        } else if (role === 'org_admin') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'OrgTabs' }],
+          });
+        } else if (role === 'super_admin') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'AdminTabs' }],
+          });
+        } else {
+          setHasChecked(true);
+        }
       } catch (err) {
-        console.error("Failed to fetch profile on autologin:", err);
-        // Recover stashed intended role if any, to prevent wrong portal drops
-        const backupRole = stashedIntendedRole || 'user';
-        await AsyncStorage.removeItem('intended_role');
-        await AsyncStorage.removeItem('upgrade_plan');
-
-        if (backupRole === 'therapist') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'TherapistTabs' }],
-  });
-} else if (backupRole === 'org_admin') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'OrgTabs' }],
-  });
-} else if (backupRole === 'super_admin') {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'AdminTabs' }],
-  });
-} else {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'UserTabs', params: { screen: 'Home' } }],
-  });
-}
+        setHasChecked(true);
       }
     };
 
     checkRedirect();
-  }, [isLoaded, isSignedIn, navigation]);
+  }, []);
 
   // Show loading spinner while auth is being checked — prevents the landing page flash
   if (!hasChecked) {

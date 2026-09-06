@@ -7,11 +7,23 @@
 import { API_URL } from "./store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Token getter injected by Clerk hook wrapper
+// Token getter or AsyncStorage fallback
 let _getToken: (() => Promise<string | null>) | null = null;
 
 export function setTokenGetter(fn: () => Promise<string | null>) {
   _getToken = fn;
+}
+
+export async function getStoredToken(): Promise<string | null> {
+  try {
+    if (_getToken) {
+      const token = await _getToken();
+      if (token) return token;
+    }
+    return await AsyncStorage.getItem("jwt_token");
+  } catch (e) {
+    return null;
+  }
 }
 
 async function apiCall<T>(
@@ -23,14 +35,11 @@ async function apiCall<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  // Attach Clerk session token if available
-  if (_getToken) {
-    try {
-      const token = await _getToken();
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-    } catch (e) {
-      console.warn("Failed to get Clerk JWT token:", e);
-    }
+  try {
+    const token = await getStoredToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  } catch (e) {
+    console.warn("Failed to retrieve JWT token:", e);
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -40,7 +49,7 @@ async function apiCall<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "API Error" }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+    throw new Error(error.message || error.error || `HTTP ${response.status}`);
   }
 
   return response.json();
@@ -49,27 +58,33 @@ async function apiCall<T>(
 const API = {
   health: () => apiCall<{ ok: boolean }>("/api/health"),
   auth: {
+    register: (data: { username: string; email: string; password: string; repassword: string; role?: string }) =>
+      apiCall<{ token: string; user: any }>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    login: (data: { email: string; password: string }) =>
+      apiCall<{ token: string; user: any }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    forgotPassword: (data: { email: string }) =>
+      apiCall<{ success: boolean; message: string }>("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     me: () => apiCall<any>("/api/auth/me"),
     setRole: async (role: string) => {
-      // Try to include an x-intent-role header so backend can assign role at auto-provision time
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
       try {
         const stashed = await AsyncStorage.getItem("intended_role");
         if (stashed) headers["x-intent-role"] = stashed;
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
 
-      if (_getToken) {
-        try {
-          const token = await _getToken();
-          if (token) headers["Authorization"] = `Bearer ${token}`;
-        } catch (e) {
-          // ignore token fetch errors here; apiCall will also attempt
-        }
-      }
+      const token = await getStoredToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const response = await fetch(`${API_URL}/api/auth/role`, {
         method: "PATCH",
@@ -81,7 +96,7 @@ const API = {
         const error = await response
           .json()
           .catch(() => ({ message: "API Error" }));
-        throw new Error(error.message || `HTTP ${response.status}`);
+        throw new Error(error.message || error.error || `HTTP ${response.status}`);
       }
 
       return response.json();

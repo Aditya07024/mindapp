@@ -17,6 +17,23 @@ if (process.env.GOOGLE_REFRESH_TOKEN) {
 }
 
 export async function createTransporter() {
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const smtpTransportOptions: SMTPTransport.Options = {
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    };
+
+    return nodemailer.createTransport(smtpTransportOptions);
+  }
+
   if (
     process.env.EMAIL_USER &&
     process.env.GOOGLE_CLIENT_ID &&
@@ -47,25 +64,8 @@ export async function createTransporter() {
 
       return nodemailer.createTransport(oauthTransportOptions);
     } catch (error) {
-      console.warn("[Mail] Google OAuth token retrieval failed, trying SMTP fallback...", error);
+      console.warn("[Mail] Google OAuth token retrieval failed:", error);
     }
-  }
-
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    const smtpTransportOptions: SMTPTransport.Options = {
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    };
-
-    return nodemailer.createTransport(smtpTransportOptions);
   }
 
   return null;
@@ -147,4 +147,44 @@ export async function sendPasswordResetEmail(email: string, newPassword: string)
     return false;
   }
 }
+
+export async function sendOtpEmail(email: string, otp: string) {
+  const transporter = await createTransporter();
+  if (!transporter) {
+    console.warn("[Mail] Mail transporter not configured. Cannot send OTP to:", email);
+    return false;
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER || process.env.SMTP_USER || "noreply@mymindtherapyfriend.com",
+    to: email,
+    subject: "Verify Your Account - MyMindTherapyFriend OTP",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #faf9f6;">
+        <h2 style="color: #2e6e65; text-align: center; margin-bottom: 8px;">MyMindTherapyFriend</h2>
+        <h3 style="color: #1e293b; text-align: center; font-size: 18px; margin-top: 0;">Verify Your Email Address</h3>
+        <p style="color: #334155; font-size: 15px;">Welcome! Please use the following 6-digit OTP code to verify your account registration:</p>
+        <div style="text-align: center; margin: 28px 0;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #2e6e65; background: #e6f2f0; padding: 14px 28px; border-radius: 10px; display: inline-block; border: 1px solid #b2dfdb;">
+            ${otp}
+          </span>
+        </div>
+        <p style="color: #64748b; font-size: 13px;">This verification code is valid for <strong>10 minutes</strong>. If you did not request this account registration, please ignore this email.</p>
+        <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center;">
+          MyMindTherapyFriend Mental Health & Wellness Platform
+        </p>
+      </div>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[Mail] Verification OTP email successfully sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`[Mail] Error sending OTP email to ${email}:`, error);
+    return false;
+  }
+}
+
 

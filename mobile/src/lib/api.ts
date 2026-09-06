@@ -59,7 +59,17 @@ const API = {
   health: () => apiCall<{ ok: boolean }>("/api/health"),
   auth: {
     register: (data: { username: string; email: string; password: string; repassword: string; role?: string }) =>
-      apiCall<{ token: string; user: any }>("/api/auth/register", {
+      apiCall<{ requireOtp?: boolean; email?: string; message?: string; token?: string; user?: any }>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    verifyOtp: (data: { email: string; otp: string }) =>
+      apiCall<{ token: string; user: any }>("/api/auth/verify-otp", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    resendOtp: (data: { email: string }) =>
+      apiCall<{ success: boolean; message: string }>("/api/auth/resend-otp", {
         method: "POST",
         body: JSON.stringify(data),
       }),

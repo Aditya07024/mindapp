@@ -17,6 +17,4 @@ export { ConferenceRegistration, type IConferenceRegistration } from "./conferen
 export { ConferencePayment, type IConferencePayment } from "./conference-payment";
 export { DelegatedAccess, type IDelegatedAccess } from "./delegated-access";
 export { PopupAnnouncement, type IPopupAnnouncement } from "./popup-announcement";
-export { MeetingPhoto, type IMeetingPhoto } from "./meeting-photo";
-
-
+export { MeetingPhoto, type IMeetingPhoto } from "./meeting-photo";export { PendingSignup, type IPendingSignup } from "./pending-signup";

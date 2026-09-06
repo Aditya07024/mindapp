@@ -27,8 +27,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const activeNavigation = navigation || fallbackNavigation;
   const [modalVisible, setModalVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { signOut } = useAuth();
-  const { user } = useUser();
 
   React.useEffect(() => {
     let active = true;

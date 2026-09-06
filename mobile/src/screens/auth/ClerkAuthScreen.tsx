@@ -20,7 +20,7 @@ import {
   User,
   KeyRound,
   CheckCircle2,
-  HelpCircle,
+  AlertCircle,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '../../theme';
@@ -36,12 +36,24 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
   const upgradePlan = route.params?.upgradePlan;
   const insets = useSafeAreaInsets();
 
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'otp'>('signin');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repassword, setRepassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
+
+  const showAlert = (title: string, message: string, onOk?: () => void) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+      if (onOk) onOk();
+    } else {
+      Alert.alert(title, message, onOk ? [{ text: 'OK', onPress: onOk }] : undefined);
+    }
+  };
 
   const completeAuthProcess = async (token: string, user: any) => {
     try {
@@ -88,8 +100,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
   };
 
   const handleLogin = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your email/username and password.');
+      setErrorMessage('Please enter your email/username and password.');
       return;
     }
 
@@ -100,27 +114,29 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
         await completeAuthProcess(res.token, res.user);
       }
     } catch (err: any) {
-      Alert.alert('Sign In Failed', err.message || 'Invalid credentials.');
+      setErrorMessage(err.message || 'Invalid email/username or password.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegister = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
     if (!username.trim()) {
-      Alert.alert('Validation Error', 'Please enter a username.');
+      setErrorMessage('Please enter a username.');
       return;
     }
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert('Validation Error', 'Please enter a valid email address.');
+      setErrorMessage('Please enter a valid email address.');
       return;
     }
     if (!password.trim()) {
-      Alert.alert('Validation Error', 'Please enter a password.');
+      setErrorMessage('Please enter a password.');
       return;
     }
     if (password !== repassword) {
-      Alert.alert('Validation Error', 'Password and Confirm Password (repassword) do not match.');
+      setErrorMessage('Password and Confirm Password (repassword) do not match.');
       return;
     }
 
@@ -133,41 +149,76 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
         repassword,
         role,
       });
-      if (res.token) {
-        Alert.alert('Success', 'Account created successfully!');
+      if (res.requireOtp) {
+        setMode('otp');
+        setOtpCode('');
+        setInfoMessage(`A 6-digit verification code has been sent to ${res.email || email}.`);
+      } else if (res.token) {
         await completeAuthProcess(res.token, res.user);
       }
     } catch (err: any) {
-      Alert.alert('Registration Failed', err.message || 'Could not create account.');
+      setErrorMessage(err.message || 'Could not initiate registration.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setErrorMessage('Please enter the 6-digit verification code sent to your email.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await API.auth.verifyOtp({
+        email,
+        otp: otpCode.trim(),
+      });
+      if (res.token) {
+        await completeAuthProcess(res.token, res.user);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Invalid or expired verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
+    setLoading(true);
+    try {
+      const res = await API.auth.resendOtp({ email });
+      setInfoMessage(res.message || `A new verification code has been sent to ${email}.`);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not resend verification code.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleForgotPassword = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter your valid registered email address.');
+      setErrorMessage('Please enter your valid registered email address.');
       return;
     }
 
     setLoading(true);
     try {
       const res = await API.auth.forgotPassword({ email });
-      Alert.alert(
-        'Password Reset Requested',
-        res.message || 'If an account with that email exists, a new password has been sent to your email.',
-        [
-          {
-            text: 'Back to Sign In',
-            onPress: () => {
-              setMode('signin');
-              setPassword('');
-            },
-          },
-        ]
-      );
+      const msg = res.message || 'If an account with that email exists, a new password has been sent to your email.';
+      showAlert('Password Reset Requested', msg, () => {
+        setMode('signin');
+        setPassword('');
+      });
     } catch (err: any) {
-      Alert.alert('Password Reset Failed', err.message || 'Could not reset password.');
+      setErrorMessage(err.message || 'Could not reset password.');
     } finally {
       setLoading(false);
     }
@@ -179,7 +230,20 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.topBar, { top: Math.max(insets.top, 20) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => {
+            if (mode === 'otp') {
+              setMode('signup');
+              setErrorMessage('');
+              setInfoMessage('');
+            } else if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.replace('Landing');
+            }
+          }}
+        >
           <ArrowLeft size={18} color={Theme.colors.onSurface} />
           <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
@@ -197,14 +261,33 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
             <Text style={styles.title}>
               {mode === 'signin' && 'Sign In'}
               {mode === 'signup' && 'Create Account'}
+              {mode === 'otp' && 'Verify Email Address'}
               {mode === 'forgot' && 'Forgot Password'}
             </Text>
             <Text style={styles.subtitle}>
-              {mode === 'forgot'
+              {mode === 'otp'
+                ? `Enter the 6-digit code sent to ${email}`
+                : mode === 'forgot'
                 ? 'Enter your email address to receive a new password on your email.'
                 : `to continue to ${role.toUpperCase().replace('_', ' ')} portal`}
             </Text>
           </View>
+
+          {/* Inline Info Message Banner */}
+          {infoMessage ? (
+            <View style={styles.infoBox}>
+              <CheckCircle2 size={16} color="#15803D" />
+              <Text style={styles.infoBoxText}>{infoMessage}</Text>
+            </View>
+          ) : null}
+
+          {/* Inline Error Message Banner */}
+          {errorMessage ? (
+            <View style={styles.errorBox}>
+              <AlertCircle size={16} color={Theme.colors.error} />
+              <Text style={styles.errorBoxText}>{errorMessage}</Text>
+            </View>
+          ) : null}
 
           {/* Form Content based on mode */}
           {mode === 'signin' && (
@@ -216,7 +299,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(val) => {
+                    setEmail(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Email or Username"
                   placeholderTextColor={Theme.colors.outline}
@@ -229,7 +315,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                 <TextInput
                   secureTextEntry
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(val) => {
+                    setPassword(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Password"
                   placeholderTextColor={Theme.colors.outline}
@@ -239,7 +328,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
               {/* Forgot password link */}
               <TouchableOpacity
                 style={styles.forgotBtn}
-                onPress={() => setMode('forgot')}
+                onPress={() => {
+                  setErrorMessage('');
+                  setMode('forgot');
+                }}
               >
                 <Text style={styles.forgotBtnText}>Forgot password?</Text>
               </TouchableOpacity>
@@ -261,7 +353,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
 
               <View style={styles.toggleContainer}>
                 <Text style={styles.toggleText}>Don't have an account?</Text>
-                <TouchableOpacity onPress={() => setMode('signup')}>
+                <TouchableOpacity onPress={() => {
+                  setErrorMessage('');
+                  setMode('signup');
+                }}>
                   <Text style={styles.toggleLink}>Sign up</Text>
                 </TouchableOpacity>
               </View>
@@ -276,7 +371,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                 <TextInput
                   autoCapitalize="none"
                   value={username}
-                  onChangeText={setUsername}
+                  onChangeText={(val) => {
+                    setUsername(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Username"
                   placeholderTextColor={Theme.colors.outline}
@@ -290,7 +388,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(val) => {
+                    setEmail(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Email Address"
                   placeholderTextColor={Theme.colors.outline}
@@ -303,7 +404,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                 <TextInput
                   secureTextEntry
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(val) => {
+                    setPassword(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Password"
                   placeholderTextColor={Theme.colors.outline}
@@ -316,7 +420,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                 <TextInput
                   secureTextEntry
                   value={repassword}
-                  onChangeText={setRepassword}
+                  onChangeText={(val) => {
+                    setRepassword(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Confirm Password (repassword)"
                   placeholderTextColor={Theme.colors.outline}
@@ -340,9 +447,69 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
 
               <View style={styles.toggleContainer}>
                 <Text style={styles.toggleText}>Already have an account?</Text>
-                <TouchableOpacity onPress={() => setMode('signin')}>
+                <TouchableOpacity onPress={() => {
+                  setErrorMessage('');
+                  setMode('signin');
+                }}>
                   <Text style={styles.toggleLink}>Sign in</Text>
                 </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {mode === 'otp' && (
+            <View style={styles.form}>
+              {/* 6-digit OTP code input */}
+              <View style={styles.inputContainer}>
+                <KeyRound size={18} color={Theme.colors.primary} style={styles.fieldIcon} />
+                <TextInput
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={otpCode}
+                  onChangeText={(val) => {
+                    setOtpCode(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                  style={[styles.input, styles.otpInput]}
+                  placeholder="123456"
+                  placeholderTextColor={Theme.colors.outline}
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={handleVerifyOtp}
+                disabled={loading}
+                style={styles.submitBtn}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Text style={styles.submitBtnText}>Verify & Complete Signup</Text>
+                    <CheckCircle2 size={16} color="#FFF" />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={handleResendOtp}
+                  disabled={loading}
+                  style={{ alignSelf: 'center' }}
+                >
+                  <Text style={styles.toggleLink}>Resend OTP Code</Text>
+                </TouchableOpacity>
+
+                <View style={styles.toggleContainer}>
+                  <Text style={styles.toggleText}>Wrong email?</Text>
+                  <TouchableOpacity onPress={() => {
+                    setErrorMessage('');
+                    setInfoMessage('');
+                    setMode('signup');
+                  }}>
+                    <Text style={styles.toggleLink}>Edit Registration Details</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           )}
@@ -356,7 +523,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(val) => {
+                    setEmail(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   style={styles.input}
                   placeholder="Registered Email Address"
                   placeholderTextColor={Theme.colors.outline}
@@ -380,7 +550,10 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
 
               <View style={styles.toggleContainer}>
                 <Text style={styles.toggleText}>Remember your password?</Text>
-                <TouchableOpacity onPress={() => setMode('signin')}>
+                <TouchableOpacity onPress={() => {
+                  setErrorMessage('');
+                  setMode('signin');
+                }}>
                   <Text style={styles.toggleLink}>Back to Sign in</Text>
                 </TouchableOpacity>
               </View>
@@ -491,6 +664,24 @@ const styles = StyleSheet.create({
     color: '#78716C',
     lineHeight: 18,
   },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: Theme.radius.lg,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  errorBoxText: {
+    fontFamily: Theme.fonts.bodyBold,
+    fontSize: 12.5,
+    color: Theme.colors.error,
+    flex: 1,
+  },
   form: {
     width: '100%',
     gap: 14,
@@ -508,11 +699,36 @@ const styles = StyleSheet.create({
   fieldIcon: {
     marginRight: 10,
   },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: Theme.radius.lg,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  infoBoxText: {
+    fontFamily: Theme.fonts.bodyBold,
+    fontSize: 12.5,
+    color: '#15803D',
+    flex: 1,
+  },
   input: {
     flex: 1,
     fontFamily: Theme.fonts.body,
     fontSize: 14,
     color: '#1C1917',
+  },
+  otpInput: {
+    fontFamily: Theme.fonts.headline,
+    fontSize: 22,
+    letterSpacing: 6,
+    textAlign: 'center',
+    color: Theme.colors.primary,
   },
   forgotBtn: {
     alignSelf: 'flex-end',

@@ -37,7 +37,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   });
 
   const storeFirstName = useStore(state => state.firstName);
-  const firstName = profileData?.user?.fullName?.split(" ")[0] || user?.firstName || storeFirstName || 'Friend';
+  const firstName = profileData?.user?.fullName?.split(" ")[0] || profileData?.user?.username || storeFirstName || 'Friend';
 
   // Fetch bookings dynamically
   const { data: bookingsData } = useQuery({

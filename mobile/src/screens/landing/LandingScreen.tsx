@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Dimensions, Image, Linking, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Dimensions, Image, Linking, ActivityIndicator, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, ArrowRight } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -215,10 +215,15 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.sm,
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 8px rgba(28, 25, 23, 0.08)' },
+      default: {
+        shadowColor: '#1C1917',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+      },
+    }),
   },
   mainTitle: {
     fontFamily: Theme.fonts.display,
@@ -272,10 +277,15 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: Theme.radius.lg,
     gap: 8,
-    shadowColor: Theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    ...Platform.select({
+      web: { boxShadow: '0px 4px 8px rgba(46, 110, 101, 0.15)' },
+      default: {
+        shadowColor: Theme.colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+      },
+    }),
     elevation: 4,
   },
   signUpText: {
@@ -291,10 +301,15 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.surfaceHigh,
     paddingVertical: 16,
     borderRadius: Theme.radius.lg,
-    shadowColor: '#2E6E65',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
+    ...Platform.select({
+      web: { boxShadow: '0px 2px 6px rgba(46, 110, 101, 0.04)' },
+      default: {
+        shadowColor: '#2E6E65',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+      },
+    }),
     elevation: 1,
   },
   signInText: {

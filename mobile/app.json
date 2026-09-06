@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "MyMindTherapyFriend",
+    "slug": "mymindtherapyfriend",
+    "scheme": "mymindtherapyfriend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.atul.mymindtherapyfriend",
+      "infoPlist": {
+        "NSCameraUsageDescription": "MyMindTherapyFriend needs camera access to allow video call sessions with your therapist.",
+        "NSMicrophoneUsageDescription": "MyMindTherapyFriend needs microphone access to allow voice in video call sessions with your therapist."
+      }
+    },
+    "android": {
+      "package": "com.atulkumar.mymindtherapyfriend.com",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "useNextNotificationsApi": true
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2E6E65"
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "owner": "aditya07024",
+    "extra": {
+      "eas": {
+        "projectId": "a2a21494-7351-4ce4-977f-6f4b2de02009"
+      }
+    }
+  }
+}

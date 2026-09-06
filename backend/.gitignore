@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+keys/
+keys1/
+*.pem
+*.pk
+*.key
+
+# Build output & Uploads
+dist/
+uploads/
+
+# Logs & OS
+*.log
+.DS_Store

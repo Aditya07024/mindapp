@@ -64,9 +64,7 @@ const envSchema = z.object({
   MONGODB_URI: z.string({
     required_error: "MONGODB_URI is required. Please set MONGODB_URI or MONGODB_URI_DEV/MONGODB_URI_PROD in your .env file.",
   }),
-  CLERK_SECRET_KEY: z.string({
-    required_error: "CLERK_SECRET_KEY is required. Please set CLERK_SECRET_KEY or CLERK_SECRET_KEY_DEV/CLERK_SECRET_KEY_PROD in your .env file.",
-  }),
+  CLERK_SECRET_KEY: z.string().optional(),
   CLERK_PUBLISHABLE_KEY: z.string().optional(),
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
   API_URL: z.string().optional(),

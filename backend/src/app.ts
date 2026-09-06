@@ -6,7 +6,6 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import mongoose from "mongoose";
 import morgan from "morgan";
-import { clerkMiddleware } from "@clerk/express";
 import { errorHandler } from "@/middleware/error-handler";
 import { apiRouter } from "@/routes";
 
@@ -28,26 +27,10 @@ export async function createApp() {
       crossOriginResourcePolicy: { policy: "cross-origin" },
     })
   );
-  const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:8081",
-    "http://localhost:8082",
-    "https://mymindtherapyfriend.online",
-    "https://www.mymindtherapyfriend.online",
-    "https://mymindtherapyfriend.com",
-    "https://www.mymindtherapyfriend.com",
-    env.CLIENT_ORIGIN, // keep any custom override from .env
-  ];
 
   app.use(
     cors({
-      origin: (origin, cb) => {
-        // Allow non-browser requests (curl, Postman, health-checks)
-        if (!origin) return cb(null, true);
-        if (allowedOrigins.includes(origin)) return cb(null, true);
-        cb(new Error(`CORS: origin ${origin} not allowed`));
-      },
+      origin: true,
       credentials: true,
     })
   );
@@ -56,8 +39,6 @@ export async function createApp() {
   app.use(express.urlencoded({ limit: "20mb", extended: true }));
   app.use(cookieParser());
   app.use(morgan("dev"));
-
-  app.use(clerkMiddleware());
 
   // Serve uploaded images statically with explicit Cross-Origin headers
   const { getUploadDirectory } = await import("@/middleware/upload.middleware");

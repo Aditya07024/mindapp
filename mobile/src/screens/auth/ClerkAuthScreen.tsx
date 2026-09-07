@@ -36,13 +36,12 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
   const upgradePlan = route.params?.upgradePlan;
   const insets = useSafeAreaInsets();
 
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'otp'>('signin');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repassword, setRepassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
@@ -141,11 +140,53 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
         repassword,
         role,
       });
+      if (res.requireOtp) {
+        setMode('otp');
+        setOtpCode('');
+        setInfoMessage(`A 6-digit verification code has been sent to ${res.email || email}.`);
+      } else if (res.token) {
+        await completeAuthProcess(res.token, res.user);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not initiate registration.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setErrorMessage('Please enter the 6-digit verification code sent to your email.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await API.auth.verifyOtp({
+        email,
+        otp: otpCode.trim(),
+      });
       if (res.token) {
         await completeAuthProcess(res.token, res.user);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Could not create account.');
+      setErrorMessage(err.message || 'Invalid or expired verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setErrorMessage('');
+    setInfoMessage('');
+    setLoading(true);
+    try {
+      const res = await API.auth.resendOtp({ email });
+      setInfoMessage(res.message || `A new verification code has been sent to ${email}.`);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not resend verification code.');
     } finally {
       setLoading(false);
     }
@@ -154,27 +195,17 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
   const handleForgotPassword = async () => {
     setErrorMessage('');
     setInfoMessage('');
-    if (!email.trim()) {
-      setErrorMessage('Please enter your registered email address or username.');
-      return;
-    }
-    if (!newPassword.trim()) {
-      setErrorMessage('Please enter a new password.');
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      setErrorMessage('New Password and Confirm New Password do not match.');
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMessage('Please enter your valid registered email address.');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await API.auth.forgotPassword({ email, newPassword });
-      setInfoMessage(res.message || 'Password updated successfully. Please sign in with your new password.');
+      const res = await API.auth.forgotPassword({ email });
+      setInfoMessage(res.message || 'If an account with that email exists, a new password has been sent to your email address.');
       setMode('signin');
       setPassword('');
-      setNewPassword('');
-      setConfirmNewPassword('');
     } catch (err: any) {
       setErrorMessage(err.message || 'Could not reset password.');
     } finally {
@@ -191,7 +222,11 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => {
-            if (navigation.canGoBack()) {
+            if (mode === 'otp') {
+              setMode('signup');
+              setErrorMessage('');
+              setInfoMessage('');
+            } else if (navigation.canGoBack()) {
               navigation.goBack();
             } else {
               navigation.replace('Landing');
@@ -215,11 +250,14 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
             <Text style={styles.title}>
               {mode === 'signin' && 'Sign In'}
               {mode === 'signup' && 'Create Account'}
-              {mode === 'forgot' && 'Reset Password'}
+              {mode === 'otp' && 'Verify Email Address'}
+              {mode === 'forgot' && 'Forgot Password'}
             </Text>
             <Text style={styles.subtitle}>
-              {mode === 'forgot'
-                ? 'Enter your account email/username and choose a new password.'
+              {mode === 'otp'
+                ? `Enter the 6-digit code sent to ${email}`
+                : mode === 'forgot'
+                ? 'Enter your email address to receive a new password on your email.'
                 : `to continue to ${role.toUpperCase().replace('_', ' ')} portal`}
             </Text>
           </View>
@@ -411,9 +449,66 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
             </View>
           )}
 
+          {mode === 'otp' && (
+            <View style={styles.form}>
+              {/* 6-digit OTP code input */}
+              <View style={styles.inputContainer}>
+                <KeyRound size={18} color={Theme.colors.primary} style={styles.fieldIcon} />
+                <TextInput
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={otpCode}
+                  onChangeText={(val) => {
+                    setOtpCode(val);
+                    if (errorMessage) setErrorMessage('');
+                  }}
+                  style={[styles.input, styles.otpInput]}
+                  placeholder="123456"
+                  placeholderTextColor={Theme.colors.outline}
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={handleVerifyOtp}
+                disabled={loading}
+                style={styles.submitBtn}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Text style={styles.submitBtnText}>Verify & Complete Signup</Text>
+                    <CheckCircle2 size={16} color="#FFF" />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={handleResendOtp}
+                  disabled={loading}
+                  style={{ alignSelf: 'center' }}
+                >
+                  <Text style={styles.toggleLink}>Resend OTP Code</Text>
+                </TouchableOpacity>
+
+                <View style={styles.toggleContainer}>
+                  <Text style={styles.toggleText}>Wrong email?</Text>
+                  <TouchableOpacity onPress={() => {
+                    setErrorMessage('');
+                    setInfoMessage('');
+                    setMode('signup');
+                  }}>
+                    <Text style={styles.toggleLink}>Edit Registration Details</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+
           {mode === 'forgot' && (
             <View style={styles.form}>
-              {/* Email / Username field for reset */}
+              {/* Email field for reset */}
               <View style={styles.inputContainer}>
                 <Mail size={18} color={Theme.colors.primary} style={styles.fieldIcon} />
                 <TextInput
@@ -425,39 +520,7 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                     if (errorMessage) setErrorMessage('');
                   }}
                   style={styles.input}
-                  placeholder="Registered Email or Username"
-                  placeholderTextColor={Theme.colors.outline}
-                />
-              </View>
-
-              {/* New Password field */}
-              <View style={styles.inputContainer}>
-                <Lock size={18} color={Theme.colors.primary} style={styles.fieldIcon} />
-                <TextInput
-                  secureTextEntry
-                  value={newPassword}
-                  onChangeText={(val) => {
-                    setNewPassword(val);
-                    if (errorMessage) setErrorMessage('');
-                  }}
-                  style={styles.input}
-                  placeholder="New Password"
-                  placeholderTextColor={Theme.colors.outline}
-                />
-              </View>
-
-              {/* Confirm New Password field */}
-              <View style={styles.inputContainer}>
-                <KeyRound size={18} color={Theme.colors.primary} style={styles.fieldIcon} />
-                <TextInput
-                  secureTextEntry
-                  value={confirmNewPassword}
-                  onChangeText={(val) => {
-                    setConfirmNewPassword(val);
-                    if (errorMessage) setErrorMessage('');
-                  }}
-                  style={styles.input}
-                  placeholder="Confirm New Password"
+                  placeholder="Registered Email Address"
                   placeholderTextColor={Theme.colors.outline}
                 />
               </View>
@@ -471,8 +534,8 @@ export const ClerkAuthScreen: React.FC<ClerkAuthScreenProps> = ({ navigation, ro
                   <ActivityIndicator color="#FFF" />
                 ) : (
                   <>
-                    <Text style={styles.submitBtnText}>Reset Password</Text>
-                    <CheckCircle2 size={16} color="#FFF" />
+                    <Text style={styles.submitBtnText}>Send New Password</Text>
+                    <Mail size={16} color="#FFF" />
                   </>
                 )}
               </TouchableOpacity>

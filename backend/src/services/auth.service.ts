@@ -5,6 +5,8 @@ import { AppError } from "@/lib/app-error";
 import { OTPService } from "@/services/otp.service";
 import { User, type IUser } from "@/models";
 
+import { JWT_SECRET } from "@/middleware/auth";
+
 export class AuthService {
   static normalizePhone(phone: string): string {
     const digits = phone.replace(/\D/g, "");
@@ -40,15 +42,13 @@ export class AuthService {
   }
 
   static generateToken(user: IUser): string {
-    const secret = env.JWT_SECRET || "default-secret-key-change-in-production";
-    return jwt.sign({ sub: user._id.toString(), role: user.role }, secret, {
+    return jwt.sign({ sub: user._id.toString(), role: user.role }, JWT_SECRET, {
       expiresIn: "30d",
     });
   }
 
   static verifyToken(token: string): { sub: string; role: string } {
-    const secret = env.JWT_SECRET || "default-secret-key-change-in-production";
-    const decoded = jwt.verify(token, secret) as jwt.JwtPayload & {
+    const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & {
       sub: string;
       role: string;
     };

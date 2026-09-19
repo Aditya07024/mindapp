@@ -362,24 +362,20 @@ Format: [{"category": "goal" | "concern" | "relationship" | "trigger" | "event",
   private static async queryHF(
     messages: { role: string; content: string }[]
   ): Promise<string> {
-    const nvidiaKey = process.env.NVIDIA_API_KEY;
     const hfToken = process.env.HF_TOKEN;
+    const hfModel = process.env.HF_MODEL || "meta-llama/Llama-3.3-70B-Instruct";
 
-    const baseUrl = `${process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1"}/chat/completions`;
-    const model = process.env.NVIDIA_MODEL || "meta/llama-3.1-8b-instruct";
-
-    // Helper to attempt NVIDIA non-streaming query
-    const tryNvidia = async (modelName: string): Promise<string | null> => {
-      if (!nvidiaKey) return null;
+    // 1. Try Hugging Face Router
+    if (hfToken) {
       try {
-        const response = await this.fetchWithTimeout(baseUrl, {
+        const response = await this.fetchWithTimeout("https://router.huggingface.co/v1/chat/completions", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${nvidiaKey}`,
+            "Authorization": `Bearer ${hfToken}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: modelName,
+            model: hfModel,
             messages,
             max_tokens: 1024,
             temperature: 0.2,
@@ -394,34 +390,24 @@ Format: [{"category": "goal" | "concern" | "relationship" | "trigger" | "event",
           if (text) return text;
         }
       } catch (err) {
-        console.warn(`NVIDIA queryHF [${modelName}] failed:`, (err as Error).message);
+        console.warn("HuggingFace queryHF failed:", (err as Error).message);
       }
-      return null;
-    };
+    }
 
-    // 1. Try primary NVIDIA model
-    let result = await tryNvidia(model);
-    if (result) return result;
-
-    // 2. Retry once
-    result = await tryNvidia(model);
-    if (result) return result;
-
-    // 3. Try secondary NVIDIA 70B model
-    result = await tryNvidia("meta/llama-3.1-70b-instruct");
-    if (result) return result;
-
-    // 4. Last resort: HuggingFace
-    if (hfToken) {
+    // 2. Fallback to NVIDIA NIM
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
+    if (nvidiaKey) {
+      const baseUrl = `${process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1"}/chat/completions`;
+      const model = process.env.NVIDIA_MODEL || "meta-llama/Llama-3.3-70B-Instruct";
       try {
-        const response = await this.fetchWithTimeout("https://router.huggingface.co/v1/chat/completions", {
+        const response = await this.fetchWithTimeout(baseUrl, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${hfToken}`,
+            "Authorization": `Bearer ${nvidiaKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: process.env.HF_MODEL || "meta-llama/Llama-3.3-70B-Instruct",
+            model,
             messages,
             max_tokens: 1024,
             temperature: 0.2,
@@ -432,10 +418,11 @@ Format: [{"category": "goal" | "concern" | "relationship" | "trigger" | "event",
 
         if (response.ok) {
           const data = await response.json() as any;
-          return data.choices?.[0]?.message?.content?.trim() ?? "";
+          const text = data.choices?.[0]?.message?.content?.trim();
+          if (text) return text;
         }
       } catch (err) {
-        console.warn("HuggingFace queryHF failed:", (err as Error).message);
+        console.warn("NVIDIA queryHF failed:", (err as Error).message);
       }
     }
 
@@ -445,17 +432,44 @@ Format: [{"category": "goal" | "concern" | "relationship" | "trigger" | "event",
   private static async *queryHFStream(
     messages: { role: string; content: string }[]
   ): AsyncGenerator<string> {
-    const nvidiaKey = process.env.NVIDIA_API_KEY;
     const hfToken = process.env.HF_TOKEN;
+    const hfModel = process.env.HF_MODEL || "meta-llama/Llama-3.3-70B-Instruct";
 
     let response: Response | null = null;
 
-    const baseUrl = `${process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1"}/chat/completions`;
-    const primaryModel = process.env.NVIDIA_MODEL || "meta/llama-3.1-8b-instruct";
+    // 1. Try Hugging Face Router
+    if (hfToken) {
+      try {
+        const res = await this.fetchWithTimeout("https://router.huggingface.co/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${hfToken}`,
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+          },
+          body: JSON.stringify({
+            model: hfModel,
+            messages,
+            max_tokens: 1024,
+            temperature: 0.2,
+            top_p: 0.7,
+            stream: true,
+          }),
+        }, 30000) as any;
 
-    // Helper to attempt NVIDIA streaming
-    const tryNvidia = async (model: string, timeoutMs: number): Promise<Response | null> => {
-      if (!nvidiaKey) return null;
+        if (res && res.ok) {
+          response = res;
+        }
+      } catch (err) {
+        console.warn("HuggingFace queryHFStream failed:", (err as Error).message);
+      }
+    }
+
+    // 2. Fallback to NVIDIA NIM
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
+    if (!response && nvidiaKey) {
+      const baseUrl = `${process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1"}/chat/completions`;
+      const model = process.env.NVIDIA_MODEL || "meta-llama/Llama-3.3-70B-Instruct";
       try {
         const res = await this.fetchWithTimeout(baseUrl, {
           method: "POST",
@@ -472,59 +486,13 @@ Format: [{"category": "goal" | "concern" | "relationship" | "trigger" | "event",
             top_p: 0.7,
             stream: true,
           }),
-        }, timeoutMs) as any;
-
-        if (res && res.ok) return res;
-        if (res) {
-          const errBody = await res.text().catch(() => "");
-          console.warn(`NVIDIA [${model}] returned status ${res.status}: ${errBody.slice(0, 100)}`);
-        }
-      } catch (err) {
-        console.warn(`NVIDIA [${model}] streaming failed:`, (err as Error).message);
-      }
-      return null;
-    };
-
-    // 1. Try primary NVIDIA model with 30s timeout
-    response = await tryNvidia(primaryModel, 30000);
-
-    // 2. Retry primary model once on failure (transient timeouts)
-    if (!response) {
-      console.log("Retrying NVIDIA primary model...");
-      response = await tryNvidia(primaryModel, 30000);
-    }
-
-    // 3. Try secondary NVIDIA 70B model
-    if (!response) {
-      console.log("Trying NVIDIA fallback model meta/llama-3.1-70b-instruct...");
-      response = await tryNvidia("meta/llama-3.1-70b-instruct", 30000);
-    }
-
-    // 4. Last resort: HuggingFace (may be quota-limited)
-    if (!response && hfToken) {
-      try {
-        const res = await this.fetchWithTimeout("https://router.huggingface.co/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${hfToken}`,
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-          },
-          body: JSON.stringify({
-            model: process.env.HF_MODEL || "meta-llama/Llama-3.3-70B-Instruct",
-            messages,
-            max_tokens: 1024,
-            temperature: 0.2,
-            top_p: 0.7,
-            stream: true,
-          }),
         }, 30000) as any;
 
         if (res && res.ok) {
           response = res;
         }
       } catch (err) {
-        console.error("HuggingFace API streaming failed:", err);
+        console.warn("NVIDIA queryHFStream failed:", (err as Error).message);
       }
     }
 

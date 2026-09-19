@@ -17,7 +17,29 @@ if (process.env.GOOGLE_REFRESH_TOKEN) {
 }
 
 export async function createTransporter() {
-  // 1. Try Google OAuth2 first (uses HTTPS API, not blocked by Render/cloud firewalls)
+  // 1. Try standard SMTP first (Port 465 SSL or 587 TLS) if credentials exist
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const port = Number(process.env.SMTP_PORT) || 465;
+    const smtpTransportOptions: SMTPTransport.Options = {
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port,
+      secure: port === 465 || process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+      tls: {
+        rejectUnauthorized: false,
+      },
+    };
+
+    return nodemailer.createTransport(smtpTransportOptions);
+  }
+
+  // 2. Fallback to Google OAuth2 if SMTP is not configured
   if (
     process.env.EMAIL_USER &&
     process.env.GOOGLE_CLIENT_ID &&
@@ -41,9 +63,9 @@ export async function createTransporter() {
           refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
           accessToken: accessToken ?? undefined,
         },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000,
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 8000,
         tls: {
           rejectUnauthorized: false,
         },
@@ -51,30 +73,8 @@ export async function createTransporter() {
 
       return nodemailer.createTransport(oauthTransportOptions);
     } catch (error) {
-      console.warn("[Mail] Google OAuth token retrieval failed, falling back to SMTP:", error);
+      console.warn("[Mail] Google OAuth token retrieval failed:", error);
     }
-  }
-
-  // 2. Fallback to standard SMTP (Port 465 SSL or 587 TLS)
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    const port = Number(process.env.SMTP_PORT) || 465;
-    const smtpTransportOptions: SMTPTransport.Options = {
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port,
-      secure: port === 465 || process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 5000,
-      tls: {
-        rejectUnauthorized: false,
-      },
-    };
-
-    return nodemailer.createTransport(smtpTransportOptions);
   }
 
   return null;

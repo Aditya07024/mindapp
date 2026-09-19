@@ -48,6 +48,9 @@ async function apiCall<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      AsyncStorage.removeItem("jwt_token").catch(() => {});
+    }
     const error = await response.json().catch(() => ({ message: "API Error" }));
     throw new Error(error.message || error.error || `HTTP ${response.status}`);
   }
@@ -243,9 +246,11 @@ const API = {
       apiCall<any>(`/api/org/invitation/${id}`, { method: "DELETE" }),
     uploadEmails: async (fileUri: string, fileName: string) => {
       const headers: Record<string, string> = {};
-      if (_getToken) {
-        const token = await _getToken();
+      try {
+        const token = await getStoredToken();
         if (token) headers["Authorization"] = `Bearer ${token}`;
+      } catch (e) {
+        console.warn("Failed to retrieve JWT token:", e);
       }
       const formData = new FormData();
       // React Native FormData expects an object representation of the file
@@ -427,13 +432,11 @@ const API = {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (_getToken) {
-        try {
-          const token = await _getToken();
-          if (token) headers["Authorization"] = `Bearer ${token}`;
-        } catch (e) {
-          console.warn("Failed to get Clerk JWT token:", e);
-        }
+      try {
+        const token = await getStoredToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+      } catch (e) {
+        console.warn("Failed to retrieve JWT token:", e);
       }
       const response = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
@@ -443,6 +446,9 @@ const API = {
 
 
       if (!response.ok) {
+        if (response.status === 401) {
+          AsyncStorage.removeItem("jwt_token").catch(() => {});
+        }
         let errMessage = `HTTP ${response.status}`;
         try {
           const err = await response.json();

@@ -52,6 +52,16 @@ export async function createApp() {
     express.static(getUploadDirectory())
   );
 
+  // Keep-alive health check endpoints for server uptime
+  app.get(["/", "/health", "/ping"], (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      status: "alive",
+      service: "MyMindTherapyFriend API",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.use("/api", apiRouter);
   app.use(errorHandler);
 

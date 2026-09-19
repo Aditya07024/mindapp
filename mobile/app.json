@@ -22,7 +22,7 @@
       }
     },
     "android": {
-      "package": "com.atulkumar.mymindtherapyfriend.com",
+      "package": "com.atul.mymindtherapyfriend",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
